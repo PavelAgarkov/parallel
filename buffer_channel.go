@@ -4,11 +4,11 @@ import "fmt"
 
 //			---------------> направление потока(последовательная работа)
 //			-------------		-------------		 -------------
-//			|transmitter|  --->	|  buffchan	|	---> | receiver  |
+//			|transmitter|  --->	|  buffchan	|   ---> | receiver  |
 //			-------------		-------------		 -------------
-//				  |									        |
-//				  V											V
-//				default									 default
+//			      |						       |
+//			      V						       V
+//			   default					    default
 
 type BuffChan struct {
 	numbers chan byte
