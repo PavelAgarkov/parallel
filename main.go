@@ -1,18 +1,17 @@
 package main
 
-import "fmt"
-
 func main() {
-	fmt.Println("123")
-
 	// debug with package
-	w := NewWait()
-	w.wait(6)
-
-	sf := NewSelectFlag()
-	sf.Start(5, 10, 9)
+	//w := NewWait()
+	//w.wait(6)
+	//
+	//sf := NewSelectFlag()
+	//sf.Start(5, 10, 9)
 
 	//channel()
+
+	bc := NewBC(5)
+	bc.Start(10)
 }
 
 // 1. Параллельна обработка данных с ожиданием всех воркеров(указанное число обработчиков).
