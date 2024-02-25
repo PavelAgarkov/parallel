@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -54,28 +55,28 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	defer close(sigCh)
-	// создает отельную горутину
+	// создает отдельную горутину
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM)
 
-	err := internal.HandleSchedule(
+	life, err := internal.HandleSchedule(
 		ctx,
 		[]*internal.BackgroundConfiguration{
 			{
-				Background:                  internal.Test1,
+				BackgroundJobFunc:           internal.Test1,
 				AppName:                     "api",
-				BackgroundName:              "UpdateFeatureFlags",
-				BackgroundSleep:             5 * time.Second,
-				ControllerSleep:             5 * time.Second,
-				MaxControllerRestarts:       5,
+				BackgroundJobName:           "UpdateFeatureFlags1",
+				BackgroundJobWaitDuration:   5 * time.Second,
+				LifeCheckDuration:           1 * time.Second,
+				MaxCheckerRestarts:          5,
 				NumberOfMonitoredGoroutines: 4,
 			},
 			{
-				Background:                  internal.Test2,
+				BackgroundJobFunc:           internal.Test2,
 				AppName:                     "api",
-				BackgroundName:              "UpdateFeatureFlags",
-				BackgroundSleep:             5 * time.Second,
-				ControllerSleep:             5 * time.Second,
-				MaxControllerRestarts:       5,
+				BackgroundJobName:           "UpdateFeatureFlags2",
+				BackgroundJobWaitDuration:   5 * time.Second,
+				LifeCheckDuration:           1 * time.Second,
+				MaxCheckerRestarts:          5,
 				NumberOfMonitoredGoroutines: 4,
 			},
 		},
@@ -87,13 +88,13 @@ func main() {
 	}
 
 	<-sigCh
-	log.Println("stop from signal")
 	cancel()
-	//close(sigCh)
+
+	log.Println(fmt.Sprintf("Alive %v", life.Alive()))
+	life.AwaitUntilAlive(1 * time.Second)
+	log.Println(fmt.Sprintf("Alive %v", life.Alive()))
+
 	gcCoont := runtime.NumGoroutine()
-	log.Println(gcCoont)
-	time.Sleep(1 * time.Second)
-	gcCoont = runtime.NumGoroutine()
 	log.Println(gcCoont)
 }
 

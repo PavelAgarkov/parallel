@@ -12,69 +12,63 @@ import (
 	"time"
 )
 
-type SyncScheduler struct {
-	number, restart, maxRestarts, numberOfMonitoredGoroutines, activeGoroutines int64
-	wg                                                                          sync.WaitGroup
+type syncScheduler struct {
+	restart, maxCheckerRestarts, numberOfMonitoredGoroutines, activeGoroutines int64
+	wg                                                                         sync.WaitGroup
 }
 
 type BackgroundConfiguration struct {
-	Background                                         func(ctx context.Context) error
-	AppName, BackgroundName                            string
-	BackgroundSleep, ControllerSleep                   time.Duration
-	MaxControllerRestarts, NumberOfMonitoredGoroutines int64
+	BackgroundJobFunc                               func(ctx context.Context) error
+	AppName, BackgroundJobName                      string
+	BackgroundJobWaitDuration, LifeCheckDuration    time.Duration
+	MaxCheckerRestarts, NumberOfMonitoredGoroutines int64
 }
 
-func newScheduler(maxRestarts, numberOfMonitoredGoroutines int64) (*SyncScheduler, error) {
-	if maxRestarts < 1 || numberOfMonitoredGoroutines < 1 {
-		return nil, errors.New("maxRestarts and numberOfMonitoredGoroutines must be change from 0")
-	}
-	return &SyncScheduler{
-		maxRestarts:                 maxRestarts,
+func newScheduler(maxCheckerRestarts, numberOfMonitoredGoroutines int64) *syncScheduler {
+	return &syncScheduler{
+		maxCheckerRestarts:          maxCheckerRestarts,
 		numberOfMonitoredGoroutines: numberOfMonitoredGoroutines,
-	}, nil
+	}
 }
 
-func (su *SyncScheduler) controller(
+func (su *syncScheduler) toControl(
 	ctx context.Context,
 	background func(ctx context.Context) error,
-	appName string,
-	backgroundName string,
-	backgroundSleep time.Duration,
-	controllerSleep time.Duration,
+	appName, backgroundName string,
+	backgroundSleep, lifeCheckDuration time.Duration,
 ) {
-	go su.runner(ctx, background, appName, backgroundName, backgroundSleep, controllerSleep)
+	go su.check(ctx, background, appName, backgroundName, backgroundSleep, lifeCheckDuration)
 }
 
-func (su *SyncScheduler) runner(
+func (su *syncScheduler) check(
 	importCtx context.Context,
 	background func(ctx context.Context) error,
-	appName string,
-	backgroundName string,
-	backgroundSleep time.Duration,
-	controllerSleep time.Duration,
+	appName, backgroundName string,
+	backgroundSleep, lifeCheckDuration time.Duration,
 ) {
-	defer su.wg.Wait()
+	rate := make(chan struct{}, su.numberOfMonitoredGoroutines)
+	for i := int64(1); i <= su.numberOfMonitoredGoroutines; i++ {
+		rate <- struct{}{}
+	}
+	defer close(rate)
 
+	defer func() {
+		su.wg.Wait()
+	}()
 	ctx, cancel := context.WithCancel(importCtx)
 	defer cancel()
 
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println(fmt.Sprintf("Controller %s %s Recovered. Error: %s", appName, backgroundName, r.(string)))
-			if atomic.LoadInt64(&su.restart) < su.maxRestarts {
+			if atomic.LoadInt64(&su.restart) < su.maxCheckerRestarts {
 				atomic.AddInt64(&su.restart, 1)
-				go su.runner(ctx, background, appName, backgroundName, backgroundSleep, controllerSleep)
+				go su.check(ctx, background, appName, backgroundName, backgroundSleep, lifeCheckDuration)
 			} else {
 				log.Println(fmt.Sprintf("the maximum number of allowed restarts has been exceeded %s %s : %s", appName, backgroundName, r.(string)))
 			}
 		}
 	}()
-
-	rate := make(chan struct{}, su.numberOfMonitoredGoroutines)
-	for i := int64(1); i <= su.numberOfMonitoredGoroutines; i++ {
-		rate <- struct{}{}
-	}
-	defer close(rate)
 
 	for {
 		select {
@@ -85,7 +79,7 @@ func (su *SyncScheduler) runner(
 		case <-rate:
 			atomic.AddInt64(&su.activeGoroutines, -1)
 
-		case <-time.After(controllerSleep):
+		case <-time.After(lifeCheckDuration):
 			load := atomic.LoadInt64(&su.activeGoroutines)
 			if load < 0 {
 				diff := 0 - load
@@ -95,18 +89,17 @@ func (su *SyncScheduler) runner(
 
 					su.wg.Add(1)
 					// можно вынести код из горутины и запустить тут
-					go su.run(ctx, background, appName, backgroundName, backgroundSleep, rate)
+					go su.runJob(ctx, background, appName, backgroundName, backgroundSleep, rate)
 				}
 			}
 		}
 	}
 }
 
-func (su *SyncScheduler) run(
+func (su *syncScheduler) runJob(
 	ctx context.Context,
 	background func(ctx context.Context) error,
-	appName string,
-	backgroundName string,
+	appName, backgroundName string,
 	backgroundSleep time.Duration,
 	rate chan<- struct{},
 ) {
@@ -122,6 +115,7 @@ func (su *SyncScheduler) run(
 	select {
 	case <-ctx.Done():
 		log.Println("context DONE background")
+		atomic.AddInt64(&su.activeGoroutines, -1)
 		return
 	case <-time.After(1 * time.Second):
 		for {
@@ -130,6 +124,7 @@ func (su *SyncScheduler) run(
 				select {
 				case <-ctx.Done():
 					log.Println("context DONE run 1")
+					atomic.AddInt64(&su.activeGoroutines, -1)
 					return
 				default:
 					err := background(ctx)
@@ -139,27 +134,95 @@ func (su *SyncScheduler) run(
 				}
 			case <-ctx.Done():
 				log.Println("context DONE run 2")
+				atomic.AddInt64(&su.activeGoroutines, -1)
 				return
 			}
 		}
 	}
 }
 
-func HandleSchedule(ctx context.Context, scheduleConfigList []*BackgroundConfiguration) error {
+type Life struct {
+	lifeChecker *sync.Map
+}
+
+func HandleSchedule(ctx context.Context, scheduleConfigList []*BackgroundConfiguration) (*Life, error) {
+	lifeMap := sync.Map{}
 	for _, background := range scheduleConfigList {
-		scheduler, err := newScheduler(background.MaxControllerRestarts, background.NumberOfMonitoredGoroutines)
+		scheduler := newScheduler(background.MaxCheckerRestarts, background.NumberOfMonitoredGoroutines)
+		err := scheduler.toValidate()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		scheduler.controller(
+		scheduler.toControl(
 			ctx,
-			background.Background,
+			background.BackgroundJobFunc,
 			background.AppName,
-			background.BackgroundName,
-			background.BackgroundSleep,
-			background.ControllerSleep,
+			background.BackgroundJobName,
+			background.BackgroundJobWaitDuration,
+			background.LifeCheckDuration,
 		)
+
+		lifeMap.Store(background.BackgroundJobName, scheduler)
+	}
+
+	return &Life{lifeChecker: &lifeMap}, nil
+}
+
+func (l *Life) Alive() bool {
+	numberAliveSchedulers := int64(0)
+	l.lifeChecker.Range(func(key, value any) bool {
+		scheduler, ok := value.(*syncScheduler)
+		if !ok {
+			return false
+		}
+		load := atomic.LoadInt64(&scheduler.activeGoroutines)
+
+		if load != -scheduler.numberOfMonitoredGoroutines {
+			numberAliveSchedulers++
+			log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
+		}
+		return true
+	})
+
+	if numberAliveSchedulers > 0 {
+		return true
+	}
+
+	return false
+}
+
+func (l *Life) AwaitUntilAlive(aliveTimer time.Duration) bool {
+	for {
+		select {
+		case <-time.After(aliveTimer):
+			numberAliveSchedulers := int64(0)
+			l.lifeChecker.Range(func(key, value any) bool {
+				scheduler, ok := value.(*syncScheduler)
+				log.Println(key.(string))
+				if !ok {
+					return false
+				}
+				load := atomic.LoadInt64(&scheduler.activeGoroutines)
+
+				if load != -scheduler.numberOfMonitoredGoroutines {
+					numberAliveSchedulers++
+				}
+				return true
+			})
+
+			if numberAliveSchedulers == 0 {
+				log.Println(fmt.Sprintf("numberAlive zero %v", 0))
+				return true
+			}
+			log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
+		}
+	}
+}
+
+func (su *syncScheduler) toValidate() error {
+	if su.maxCheckerRestarts < 1 || su.numberOfMonitoredGoroutines < 1 {
+		return errors.New("maxRestarts and numberOfMonitoredGoroutines must be change from 0")
 	}
 	return nil
 }
