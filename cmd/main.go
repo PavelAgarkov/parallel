@@ -51,20 +51,30 @@ func main() {
 	//ctx := context.Background()
 
 	ctx, cancel := context.WithCancel(context.Background())
+
 	sigCh := make(chan os.Signal, 1)
+	defer close(sigCh)
+	// создает отельную горутину
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM)
 
-	wait := make(chan int)
 	err := internal.HandleSchedule(
 		ctx,
-		wait,
 		[]*internal.BackgroundConfiguration{
 			{
-				Background:                  internal.UpdateFeatureFlags,
+				Background:                  internal.Test1,
 				AppName:                     "api",
 				BackgroundName:              "UpdateFeatureFlags",
-				BackgroundSleep:             10 * time.Second,
-				ControllerSleep:             10 * time.Second,
+				BackgroundSleep:             5 * time.Second,
+				ControllerSleep:             5 * time.Second,
+				MaxControllerRestarts:       5,
+				NumberOfMonitoredGoroutines: 4,
+			},
+			{
+				Background:                  internal.Test2,
+				AppName:                     "api",
+				BackgroundName:              "UpdateFeatureFlags",
+				BackgroundSleep:             5 * time.Second,
+				ControllerSleep:             5 * time.Second,
 				MaxControllerRestarts:       5,
 				NumberOfMonitoredGoroutines: 4,
 			},
@@ -79,16 +89,10 @@ func main() {
 	<-sigCh
 	log.Println("stop from signal")
 	cancel()
+	//close(sigCh)
 	gcCoont := runtime.NumGoroutine()
 	log.Println(gcCoont)
-	time.Sleep(10 * time.Second)
-	gcCoont = runtime.NumGoroutine()
-	log.Println(gcCoont)
-	defer func() {
-		gcCoont = runtime.NumGoroutine()
-		log.Println(gcCoont)
-	}()
-	//<-wait
+	time.Sleep(1 * time.Second)
 	gcCoont = runtime.NumGoroutine()
 	log.Println(gcCoont)
 }
