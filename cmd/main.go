@@ -62,7 +62,7 @@ func main() {
 		ctx,
 		[]*internal.BackgroundConfiguration{
 			{
-				BackgroundJobFunc:           internal.Test1,
+				BackgroundJobFunc:           internal.BackgroundJob(internal.Test1),
 				AppName:                     "api",
 				BackgroundJobName:           "UpdateFeatureFlags1",
 				BackgroundJobWaitDuration:   5 * time.Second,
@@ -71,7 +71,7 @@ func main() {
 				NumberOfMonitoredGoroutines: 4,
 			},
 			{
-				BackgroundJobFunc:           internal.Test2,
+				BackgroundJobFunc:           internal.BackgroundJob(internal.Test2),
 				AppName:                     "api",
 				BackgroundJobName:           "UpdateFeatureFlags2",
 				BackgroundJobWaitDuration:   5 * time.Second,

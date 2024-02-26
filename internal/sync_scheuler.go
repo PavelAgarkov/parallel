@@ -17,8 +17,10 @@ type syncScheduler struct {
 	wg                                                                  sync.WaitGroup
 }
 
+type BackgroundJob func(ctx context.Context) error
+
 type BackgroundConfiguration struct {
-	BackgroundJobFunc                               func(ctx context.Context) error
+	BackgroundJobFunc                               BackgroundJob
 	AppName, BackgroundJobName                      string
 	BackgroundJobWaitDuration, LifeCheckDuration    time.Duration
 	MaxCheckerRestarts, NumberOfMonitoredGoroutines int64
@@ -33,7 +35,7 @@ func newScheduler(maxCheckerRestarts, numberOfMonitoredGoroutines int64) *syncSc
 
 func (su *syncScheduler) toControl(
 	ctx context.Context,
-	background func(ctx context.Context) error,
+	background BackgroundJob,
 	appName, backgroundName string,
 	backgroundSleep, lifeCheckDuration time.Duration,
 ) {
@@ -42,7 +44,7 @@ func (su *syncScheduler) toControl(
 
 func (su *syncScheduler) check(
 	importCtx context.Context,
-	background func(ctx context.Context) error,
+	background BackgroundJob,
 	appName, backgroundName string,
 	backgroundSleep, lifeCheckDuration time.Duration,
 ) {
@@ -98,7 +100,7 @@ func (su *syncScheduler) check(
 
 func (su *syncScheduler) runJob(
 	ctx context.Context,
-	background func(ctx context.Context) error,
+	background BackgroundJob,
 	appName, backgroundName string,
 	backgroundSleep time.Duration,
 	rate chan<- struct{},
