@@ -13,6 +13,7 @@ func Test1(ctx context.Context) error {
 	time.Sleep(5 * time.Second)
 	if ctx.Err() != nil {
 		log.Println("ctx err Test1")
+		return nil
 	}
 	panic("panic 1111")
 	return nil
@@ -25,6 +26,7 @@ func Test2(ctx context.Context) error {
 	time.Sleep(5 * time.Second)
 	if ctx.Err() != nil {
 		log.Println("ctx err Test2")
+		return nil
 	}
 	panic("panic 2222")
 	return nil

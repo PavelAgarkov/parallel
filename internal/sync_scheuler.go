@@ -13,8 +13,8 @@ import (
 )
 
 type syncScheduler struct {
-	restart, maxCheckerRestarts, numberOfMonitoredGoroutines, activeGoroutines int64
-	wg                                                                         sync.WaitGroup
+	restart, maxCheckerRestarts, numberOfMonitoredGo, activeGo, aliveGo int64
+	wg                                                                  sync.WaitGroup
 }
 
 type BackgroundConfiguration struct {
@@ -26,8 +26,8 @@ type BackgroundConfiguration struct {
 
 func newScheduler(maxCheckerRestarts, numberOfMonitoredGoroutines int64) *syncScheduler {
 	return &syncScheduler{
-		maxCheckerRestarts:          maxCheckerRestarts,
-		numberOfMonitoredGoroutines: numberOfMonitoredGoroutines,
+		maxCheckerRestarts:  maxCheckerRestarts,
+		numberOfMonitoredGo: numberOfMonitoredGoroutines,
 	}
 }
 
@@ -46,8 +46,8 @@ func (su *syncScheduler) check(
 	appName, backgroundName string,
 	backgroundSleep, lifeCheckDuration time.Duration,
 ) {
-	rate := make(chan struct{}, su.numberOfMonitoredGoroutines)
-	for i := int64(1); i <= su.numberOfMonitoredGoroutines; i++ {
+	rate := make(chan struct{}, su.numberOfMonitoredGo)
+	for i := int64(1); i <= su.numberOfMonitoredGo; i++ {
 		rate <- struct{}{}
 	}
 	defer close(rate)
@@ -77,12 +77,12 @@ func (su *syncScheduler) check(
 			return
 
 		case <-rate:
-			atomic.AddInt64(&su.activeGoroutines, -1)
+			atomic.AddInt64(&su.activeGo, -1)
 
 		case <-time.After(lifeCheckDuration):
-			load := atomic.LoadInt64(&su.activeGoroutines)
-			if load < 0 {
-				diff := 0 - load
+			activeG := atomic.LoadInt64(&su.activeGo)
+			if activeG < 0 {
+				diff := 0 - activeG
 				for i := diff; i > 0; i-- {
 					gcCoont := runtime.NumGoroutine()
 					log.Println(gcCoont)
@@ -106,16 +106,21 @@ func (su *syncScheduler) runJob(
 	defer su.wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
+			load := atomic.LoadInt64(&su.aliveGo)
+			log.Println(fmt.Sprintf("load runJob %v", load))
+			atomic.AddInt64(&su.aliveGo, -1)
+
 			rate <- struct{}{}
 			log.Println(fmt.Sprintf("sync %s %s Recovered. Error: %s", appName, backgroundName, r))
 		}
 	}()
 
-	atomic.AddInt64(&su.activeGoroutines, 1)
+	atomic.AddInt64(&su.activeGo, 1)
+	atomic.AddInt64(&su.aliveGo, 1)
 	select {
 	case <-ctx.Done():
 		log.Println("context DONE background")
-		atomic.AddInt64(&su.activeGoroutines, -1)
+		atomic.AddInt64(&su.aliveGo, -1)
 		return
 	case <-time.After(1 * time.Second):
 		for {
@@ -124,7 +129,7 @@ func (su *syncScheduler) runJob(
 				select {
 				case <-ctx.Done():
 					log.Println("context DONE run 1")
-					atomic.AddInt64(&su.activeGoroutines, -1)
+					atomic.AddInt64(&su.aliveGo, -1)
 					return
 				default:
 					err := background(ctx)
@@ -134,7 +139,7 @@ func (su *syncScheduler) runJob(
 				}
 			case <-ctx.Done():
 				log.Println("context DONE run 2")
-				atomic.AddInt64(&su.activeGoroutines, -1)
+				atomic.AddInt64(&su.aliveGo, -1)
 				return
 			}
 		}
@@ -176,9 +181,9 @@ func (l *Life) Alive() bool {
 		if !ok {
 			return false
 		}
-		load := atomic.LoadInt64(&scheduler.activeGoroutines)
+		load := atomic.LoadInt64(&scheduler.aliveGo)
 
-		if load != -scheduler.numberOfMonitoredGoroutines {
+		if load != 0 {
 			numberAliveSchedulers++
 			log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
 		}
@@ -203,9 +208,13 @@ func (l *Life) AwaitUntilAlive(aliveTimer time.Duration) bool {
 				if !ok {
 					return false
 				}
-				load := atomic.LoadInt64(&scheduler.activeGoroutines)
 
-				if load != -scheduler.numberOfMonitoredGoroutines {
+				load := atomic.LoadInt64(&scheduler.aliveGo)
+				log.Println(fmt.Sprintf("load %v", load))
+				gcCoont := runtime.NumGoroutine()
+				log.Println(gcCoont)
+
+				if load != 0 {
 					numberAliveSchedulers++
 				}
 				return true
@@ -221,7 +230,7 @@ func (l *Life) AwaitUntilAlive(aliveTimer time.Duration) bool {
 }
 
 func (su *syncScheduler) toValidate() error {
-	if su.maxCheckerRestarts < 1 || su.numberOfMonitoredGoroutines < 1 {
+	if su.maxCheckerRestarts < 1 || su.numberOfMonitoredGo < 1 {
 		return errors.New("maxRestarts and numberOfMonitoredGoroutines must be change from 0")
 	}
 	return nil
