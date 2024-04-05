@@ -7,7 +7,6 @@ import (
 )
 
 func Test1(ctx context.Context) error {
-	//logger := log.Logger{}
 	log.Println(111111)
 
 	time.Sleep(5 * time.Second)

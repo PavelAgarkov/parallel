@@ -20,10 +20,13 @@ type syncScheduler struct {
 type BackgroundJob func(ctx context.Context) error
 
 type BackgroundConfiguration struct {
-	BackgroundJobFunc                               BackgroundJob
-	AppName, BackgroundJobName                      string
-	BackgroundJobWaitDuration, LifeCheckDuration    time.Duration
-	MaxCheckerRestarts, NumberOfMonitoredGoroutines int64
+	BackgroundJobFunc BackgroundJob
+	AppName,
+	BackgroundJobName string
+	BackgroundJobWaitDuration,
+	LifeCheckDuration time.Duration
+	MaxCheckerRestarts,
+	NumberOfMonitoredGoroutines int64
 }
 
 func newScheduler(maxCheckerRestarts, numberOfMonitoredGoroutines int64) *syncScheduler {
