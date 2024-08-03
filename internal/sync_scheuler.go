@@ -43,7 +43,7 @@ func (ss *syncScheduler) decrementAliveGo() {
 	atomic.AddInt64(&ss.aliveGo, -1)
 }
 
-func (ss *syncScheduler) runSchedule(importCtx context.Context) {
+func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *ScheduleLife) {
 	ctx, cancel := context.WithCancel(importCtx)
 	defer cancel()
 
@@ -73,6 +73,7 @@ func (ss *syncScheduler) runSchedule(importCtx context.Context) {
 					ss.config.AppName,
 					ss.config.BackgroundJobName,
 					ss.config.BackgroundJobWaitDuration,
+					scheduleLife,
 				)
 			}
 		}
@@ -84,6 +85,7 @@ func (ss *syncScheduler) runJob(
 	background BackgroundJob,
 	appName, backgroundName string,
 	backgroundSleep time.Duration,
+	scheduleLife *ScheduleLife,
 ) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -111,7 +113,11 @@ func (ss *syncScheduler) runJob(
 					ss.decrementAliveGo()
 					return
 				default:
+					key := ss.config.AppName + "." + ss.config.BackgroundJobName
+					start := time.Now()
 					err := background(ctx)
+					end := time.Now()
+					scheduleLife.setScheduleLogTime(start, end, key)
 					if err != nil {
 						log.Println(fmt.Sprintf("can't background for %s %s", appName, backgroundName))
 					}

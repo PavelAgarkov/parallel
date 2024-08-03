@@ -30,14 +30,14 @@ func main() {
 				AppName:                   "api",
 				BackgroundJobName:         "UpdateFeatureFlags1",
 				BackgroundJobWaitDuration: 5 * time.Second,
-				LifeCheckDuration:         10 * time.Second,
+				LifeCheckDuration:         2 * time.Second,
 			},
 			{
 				BackgroundJobFunc:         internal.BackgroundJob(internal.Test2),
 				AppName:                   "api",
 				BackgroundJobName:         "UpdateFeatureFlags2",
 				BackgroundJobWaitDuration: 5 * time.Second,
-				LifeCheckDuration:         10 * time.Second,
+				LifeCheckDuration:         2 * time.Second,
 			},
 		},
 	)
@@ -55,7 +55,7 @@ func main() {
 	life.StopSchedule()
 	log.Println(fmt.Sprintf("Alive %v", life.Alive()))
 
-	logs := life.GetScheduleLog()
+	logs := life.GetScheduleLogTime(time.DateTime)
 	log.Println(logs)
 
 	gcCoont = runtime.NumGoroutine()

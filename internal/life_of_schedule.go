@@ -13,6 +13,7 @@ type ScheduleLog map[string]scheduleLog
 
 type scheduleLog struct {
 	lastStartOfExecution time.Time
+	lastEndOfExecution   time.Time
 }
 
 type ScheduleLife struct {
@@ -21,7 +22,9 @@ type ScheduleLife struct {
 
 	lifeChecker      *sync.Map
 	listOfSchedulers []*syncScheduler
-	scheduleLog      ScheduleLog
+
+	logMu       sync.Mutex
+	scheduleLog ScheduleLog
 }
 
 func CreateScheduleLife(scheduleConfigList []BackgroundConfiguration) (*ScheduleLife, error) {
@@ -37,6 +40,28 @@ func CreateScheduleLife(scheduleConfigList []BackgroundConfiguration) (*Schedule
 	sl.lifeChecker = &sync.Map{}
 	sl.scheduleLog = make(ScheduleLog)
 	return sl, nil
+}
+
+func (l *ScheduleLife) setScheduleLogTime(start, end time.Time, name string) {
+	l.logMu.Lock()
+	defer l.logMu.Unlock()
+	l.scheduleLog[name] = scheduleLog{
+		lastStartOfExecution: start,
+		lastEndOfExecution:   end,
+	}
+}
+
+func (l *ScheduleLife) GetScheduleLogTime(format string) map[string]string {
+	l.logMu.Lock()
+	defer l.logMu.Unlock()
+	newLog := make(map[string]string)
+	for k, v := range l.scheduleLog {
+		keyStart := k + "." + "[start]"
+		keyEnd := k + "." + "[stop]"
+		newLog[keyStart] = v.lastStartOfExecution.Format(format)
+		newLog[keyEnd] = v.lastEndOfExecution.Format(format)
+	}
+	return newLog
 }
 
 func (l *ScheduleLife) isRunning() bool {
@@ -58,16 +83,8 @@ func (l *ScheduleLife) RunSchedule(ctx context.Context) {
 	l.toRun()
 	for _, scheduler := range l.listOfSchedulers {
 		l.lifeChecker.Store(scheduler.config.BackgroundJobName, scheduler)
-		key := scheduler.config.AppName + "." + scheduler.config.BackgroundJobName
-		go scheduler.runSchedule(ctx)
-		l.scheduleLog[key] = scheduleLog{
-			lastStartOfExecution: time.Now(),
-		}
+		go scheduler.runSchedule(ctx, l)
 	}
-}
-
-func (l *ScheduleLife) GetScheduleLog() ScheduleLog {
-	return l.scheduleLog
 }
 
 func (l *ScheduleLife) StopSchedule() {
