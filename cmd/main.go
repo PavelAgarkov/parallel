@@ -30,14 +30,14 @@ func main() {
 				AppName:                   "api",
 				BackgroundJobName:         "UpdateFeatureFlags1",
 				BackgroundJobWaitDuration: 5 * time.Second,
-				LifeCheckDuration:         2 * time.Second,
+				LifeCheckDuration:         10 * time.Second,
 			},
 			{
 				BackgroundJobFunc:         internal.BackgroundJob(internal.Test2),
 				AppName:                   "api",
 				BackgroundJobName:         "UpdateFeatureFlags2",
 				BackgroundJobWaitDuration: 5 * time.Second,
-				LifeCheckDuration:         2 * time.Second,
+				LifeCheckDuration:         10 * time.Second,
 			},
 		},
 	)

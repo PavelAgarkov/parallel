@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"runtime"
 	"sync/atomic"
 	"time"
 )
@@ -64,7 +65,7 @@ func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *Sc
 
 		case <-time.After(ss.config.LifeCheckDuration):
 			if ss.getAliveGo() == 0 {
-				//log.Println(runtime.NumGoroutine(), "in_check")
+				log.Println(runtime.NumGoroutine(), "in_check")
 
 				go ss.runJob(ctx, scheduleLife)
 			}
@@ -74,43 +75,38 @@ func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *Sc
 
 func (ss *syncScheduler) runJob(ctx context.Context, scheduleLife *ScheduleLife) {
 	defer func() {
+		ss.decrementAliveGo()
+	}()
+	defer func() {
 		if r := recover(); r != nil {
-			//load := ss.getAliveGo()
-			//log.Println(fmt.Sprintf("load runJob %v", load))
-			ss.decrementAliveGo()
-
 			log.Println(fmt.Sprintf("syncScheduler.runJob() %s %s was Recovered. Error: %s", ss.config.AppName, ss.config.BackgroundJobName, r))
 		}
 	}()
 
-	ss.incrementAliveGo()
 	select {
 	case <-ctx.Done():
 		log.Println("context DONE background")
-		ss.decrementAliveGo()
 		return
 	case <-time.After(1 * time.Second):
-		for {
+		select {
+		case <-time.After(ss.config.BackgroundJobWaitDuration - 1*time.Second):
 			select {
-			case <-time.After(ss.config.BackgroundJobWaitDuration - 1*time.Second):
-				select {
-				case <-ctx.Done():
-					log.Println("context DONE run 1")
-					ss.decrementAliveGo()
-					return
-				default:
-					key := ss.config.AppName + "." + ss.config.BackgroundJobName
-					start := time.Now()
-					err := ss.config.BackgroundJobFunc(ctx)
-					end := time.Now()
-					scheduleLife.setScheduleLogTime(start, end, key)
-					if err != nil {
-						log.Println(fmt.Sprintf("can't background for %s %s", ss.config.AppName, ss.config.BackgroundJobName))
-					}
+			case <-ctx.Done():
+				log.Println("context DONE run 1")
+				return
+			default:
+				key := ss.config.AppName + "." + ss.config.BackgroundJobName
+				start := time.Now()
+				ss.incrementAliveGo()
+				err := ss.config.BackgroundJobFunc(ctx)
+				end := time.Now()
+				scheduleLife.setScheduleLogTime(start, end, key)
+				if err != nil {
+					log.Println(fmt.Sprintf("can't background for %s %s", ss.config.AppName, ss.config.BackgroundJobName))
 				}
+				return
 			case <-ctx.Done():
 				log.Println("context DONE run 2")
-				ss.decrementAliveGo()
 				return
 			}
 		}

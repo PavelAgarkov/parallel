@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -88,6 +89,9 @@ func (l *ScheduleLife) RunSchedule(ctx context.Context) {
 func (l *ScheduleLife) StopSchedule() {
 	if l.isRunning() {
 		l.awaitUntilAlive(1 * time.Second)
+		for _, v := range l.listOfSchedulers {
+			atomic.StoreInt64(&v.aliveGo, 0)
+		}
 	}
 }
 
@@ -100,14 +104,14 @@ func (l *ScheduleLife) Alive() bool {
 		}
 		load := scheduler.getAliveGo()
 
-		if load != 0 {
+		if load > 0 {
 			numberAliveSchedulers++
 			//log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
 		}
 		return true
 	})
 
-	if numberAliveSchedulers > 0 {
+	if numberAliveSchedulers < 1 {
 		return true
 	}
 
@@ -131,13 +135,13 @@ func (l *ScheduleLife) awaitUntilAlive(aliveTimer time.Duration) bool {
 				//gcCoont := runtime.NumGoroutine()
 				//log.Println(gcCoont, "in_await")
 
-				if load != 0 {
+				if load > 0 {
 					numberAliveSchedulers++
 				}
 				return true
 			})
 
-			if numberAliveSchedulers == 0 {
+			if numberAliveSchedulers < 1 {
 				//log.Println(fmt.Sprintf("numberAlive zero %v", 0))
 				return true
 			}
