@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"runtime"
 	"sync/atomic"
 	"time"
 )
@@ -49,7 +48,7 @@ func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *Sc
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println(fmt.Sprintf("syncScheduler.check() %s %s was Recovered. Error: %s",
+			log.Println(fmt.Sprintf("syncScheduler.runSchedule() %s %s was Recovered. Error: %s",
 				ss.config.AppName,
 				ss.config.BackgroundJobName,
 				r.(string)),
@@ -65,7 +64,7 @@ func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *Sc
 
 		case <-time.After(ss.config.LifeCheckDuration):
 			if ss.getAliveGo() == 0 {
-				log.Println(runtime.NumGoroutine(), "in_check")
+				//log.Println(runtime.NumGoroutine(), "in_check")
 
 				go ss.runJob(ctx, scheduleLife)
 			}
@@ -76,8 +75,8 @@ func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *Sc
 func (ss *syncScheduler) runJob(ctx context.Context, scheduleLife *ScheduleLife) {
 	defer func() {
 		if r := recover(); r != nil {
-			load := ss.getAliveGo()
-			log.Println(fmt.Sprintf("load runJob %v", load))
+			//load := ss.getAliveGo()
+			//log.Println(fmt.Sprintf("load runJob %v", load))
 			ss.decrementAliveGo()
 
 			log.Println(fmt.Sprintf("syncScheduler.runJob() %s %s was Recovered. Error: %s", ss.config.AppName, ss.config.BackgroundJobName, r))

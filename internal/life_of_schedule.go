@@ -2,9 +2,7 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -104,7 +102,7 @@ func (l *ScheduleLife) Alive() bool {
 
 		if load != 0 {
 			numberAliveSchedulers++
-			log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
+			//log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
 		}
 		return true
 	})
@@ -129,9 +127,9 @@ func (l *ScheduleLife) awaitUntilAlive(aliveTimer time.Duration) bool {
 				}
 
 				load := scheduler.getAliveGo()
-				log.Println(fmt.Sprintf("load %v", load))
-				gcCoont := runtime.NumGoroutine()
-				log.Println(gcCoont, "in_await")
+				//log.Println(fmt.Sprintf("load %v", load))
+				//gcCoont := runtime.NumGoroutine()
+				//log.Println(gcCoont, "in_await")
 
 				if load != 0 {
 					numberAliveSchedulers++
@@ -140,10 +138,10 @@ func (l *ScheduleLife) awaitUntilAlive(aliveTimer time.Duration) bool {
 			})
 
 			if numberAliveSchedulers == 0 {
-				log.Println(fmt.Sprintf("numberAlive zero %v", 0))
+				//log.Println(fmt.Sprintf("numberAlive zero %v", 0))
 				return true
 			}
-			log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
+			//log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
 		}
 	}
 }
