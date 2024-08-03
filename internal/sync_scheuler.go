@@ -67,33 +67,20 @@ func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *Sc
 			if ss.getAliveGo() == 0 {
 				log.Println(runtime.NumGoroutine(), "in_check")
 
-				go ss.runJob(
-					ctx,
-					ss.config.BackgroundJobFunc,
-					ss.config.AppName,
-					ss.config.BackgroundJobName,
-					ss.config.BackgroundJobWaitDuration,
-					scheduleLife,
-				)
+				go ss.runJob(ctx, scheduleLife)
 			}
 		}
 	}
 }
 
-func (ss *syncScheduler) runJob(
-	ctx context.Context,
-	background BackgroundJob,
-	appName, backgroundName string,
-	backgroundSleep time.Duration,
-	scheduleLife *ScheduleLife,
-) {
+func (ss *syncScheduler) runJob(ctx context.Context, scheduleLife *ScheduleLife) {
 	defer func() {
 		if r := recover(); r != nil {
 			load := ss.getAliveGo()
 			log.Println(fmt.Sprintf("load runJob %v", load))
 			ss.decrementAliveGo()
 
-			log.Println(fmt.Sprintf("syncScheduler.runJob() %s %s was Recovered. Error: %s", appName, backgroundName, r))
+			log.Println(fmt.Sprintf("syncScheduler.runJob() %s %s was Recovered. Error: %s", ss.config.AppName, ss.config.BackgroundJobName, r))
 		}
 	}()
 
@@ -106,7 +93,7 @@ func (ss *syncScheduler) runJob(
 	case <-time.After(1 * time.Second):
 		for {
 			select {
-			case <-time.After(backgroundSleep - 1*time.Second):
+			case <-time.After(ss.config.BackgroundJobWaitDuration - 1*time.Second):
 				select {
 				case <-ctx.Done():
 					log.Println("context DONE run 1")
@@ -115,11 +102,11 @@ func (ss *syncScheduler) runJob(
 				default:
 					key := ss.config.AppName + "." + ss.config.BackgroundJobName
 					start := time.Now()
-					err := background(ctx)
+					err := ss.config.BackgroundJobFunc(ctx)
 					end := time.Now()
 					scheduleLife.setScheduleLogTime(start, end, key)
 					if err != nil {
-						log.Println(fmt.Sprintf("can't background for %s %s", appName, backgroundName))
+						log.Println(fmt.Sprintf("can't background for %s %s", ss.config.AppName, ss.config.BackgroundJobName))
 					}
 				}
 			case <-ctx.Done():
