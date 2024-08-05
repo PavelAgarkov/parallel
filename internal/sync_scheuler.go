@@ -84,33 +84,40 @@ func (ss *syncScheduler) runJob(ctx context.Context, scheduleLife *ScheduleLife)
 	}()
 
 	select {
-	case <-ctx.Done():
-		log.Println("context DONE background")
-		return
-	case <-time.After(1 * time.Second):
-		select {
-		case <-time.After(ss.config.BackgroundJobWaitDuration - 1*time.Second):
-			select {
-			case <-ctx.Done():
-				log.Println("context DONE run 1")
-				return
-			default:
-				key := ss.config.AppName + "." + ss.config.BackgroundJobName
-				start := time.Now()
-				ss.incrementAliveGo()
-				err := ss.config.BackgroundJobFunc(ctx)
-				end := time.Now()
-				scheduleLife.setScheduleLogTime(start, end, key)
-				if err != nil {
-					log.Println(fmt.Sprintf("can't background for %s %s", ss.config.AppName, ss.config.BackgroundJobName))
-				}
-				return
-			case <-ctx.Done():
-				log.Println("context DONE run 2")
-				return
-			}
+	//case <-time.After(1 * time.Second):
+	//	select {
+	case <-time.After(ss.config.BackgroundJobWaitDuration):
+		key := ss.config.AppName + "." + ss.config.BackgroundJobName
+		start := time.Now()
+		ss.incrementAliveGo()
+		err := ss.config.BackgroundJobFunc(ctx)
+		end := time.Now()
+		scheduleLife.setScheduleLogTime(start, end, key)
+		if err != nil {
+			log.Println(fmt.Sprintf("can't background for %s %s", ss.config.AppName, ss.config.BackgroundJobName))
 		}
+		return
 	}
+	//case <-time.After(1 * time.Second):
+	//select {
+	//case <-time.After(ss.config.BackgroundJobWaitDuration - 1*time.Second):
+	//	select {
+	//	case <-ctx.Done():
+	//		log.Println("context DONE run 1")
+	//		return
+	//	default:
+	//		key := ss.config.AppName + "." + ss.config.BackgroundJobName
+	//		start := time.Now()
+	//		ss.incrementAliveGo()
+	//		err := ss.config.BackgroundJobFunc(ctx)
+	//		end := time.Now()
+	//		scheduleLife.setScheduleLogTime(start, end, key)
+	//		if err != nil {
+	//			log.Println(fmt.Sprintf("can't background for %s %s", ss.config.AppName, ss.config.BackgroundJobName))
+	//		}
+	//		return
+	//	}
+	//}
 }
 
 func (ss *syncScheduler) toValidate() error {

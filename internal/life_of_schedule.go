@@ -86,16 +86,19 @@ func (l *ScheduleLife) RunSchedule(ctx context.Context) {
 	}
 }
 
-func (l *ScheduleLife) StopSchedule() {
+func (l *ScheduleLife) AwaitStopSchedule() {
 	if l.isRunning() {
-		l.awaitUntilAlive(1 * time.Second)
-		for _, v := range l.listOfSchedulers {
-			atomic.StoreInt64(&v.aliveGo, 0)
+		alive := l.awaitUntilAlive(1 * time.Second)
+		if alive == 0 {
+			log.Println(alive, "await alive")
+			for _, v := range l.listOfSchedulers {
+				atomic.StoreInt64(&v.aliveGo, 0)
+			}
 		}
 	}
 }
 
-func (l *ScheduleLife) Alive() bool {
+func (l *ScheduleLife) Alive() int64 {
 	numberAliveSchedulers := int64(0)
 	l.lifeChecker.Range(func(key, value any) bool {
 		scheduler, ok := value.(*syncScheduler)
@@ -106,35 +109,26 @@ func (l *ScheduleLife) Alive() bool {
 
 		if load > 0 {
 			numberAliveSchedulers++
-			//log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
 		}
 		return true
 	})
 
-	if numberAliveSchedulers < 1 {
-		return true
-	}
-
-	return false
+	return numberAliveSchedulers
 }
 
-func (l *ScheduleLife) awaitUntilAlive(aliveTimer time.Duration) bool {
+func (l *ScheduleLife) awaitUntilAlive(aliveTimer time.Duration) int64 {
 	for {
 		select {
 		case <-time.After(aliveTimer):
 			numberAliveSchedulers := int64(0)
 			l.lifeChecker.Range(func(key, value any) bool {
 				scheduler, ok := value.(*syncScheduler)
-				log.Println(key.(string))
+				//log.Println(key.(string))
 				if !ok {
 					return false
 				}
 
 				load := scheduler.getAliveGo()
-				//log.Println(fmt.Sprintf("load %v", load))
-				//gcCoont := runtime.NumGoroutine()
-				//log.Println(gcCoont, "in_await")
-
 				if load > 0 {
 					numberAliveSchedulers++
 				}
@@ -142,10 +136,8 @@ func (l *ScheduleLife) awaitUntilAlive(aliveTimer time.Duration) bool {
 			})
 
 			if numberAliveSchedulers < 1 {
-				//log.Println(fmt.Sprintf("numberAlive zero %v", 0))
-				return true
+				return numberAliveSchedulers
 			}
-			//log.Println(fmt.Sprintf("numberAlive %v", numberAliveSchedulers))
 		}
 	}
 }

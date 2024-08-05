@@ -15,6 +15,7 @@ func Test1(ctx context.Context) error {
 		return nil
 	}
 	panic("panic 1111")
+	log.Println("end Test1")
 	return nil
 }
 
@@ -28,5 +29,6 @@ func Test2(ctx context.Context) error {
 		return nil
 	}
 	panic("panic 2222")
+	log.Println("end Test2")
 	return nil
 }
