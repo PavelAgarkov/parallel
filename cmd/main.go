@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"parallel/internal"
+	"parallel/internal/structs"
 	"runtime"
 	"syscall"
 	"time"
@@ -37,36 +38,58 @@ func main() {
 
 	gcCoont = runtime.NumGoroutine()
 	log.Println(gcCoont, "in_main_middle")
-	life, err := internal.CreateScheduleLife(
+
+	//ml1 := &structs.MainLocator{Sn: "main1"}
+	ml2 := &structs.ExampleLocator{Sn: "main2"}
+	ml3 := &structs.ExampleLocator{Sn: "main3"}
+	life, err := internal.CreateSchedule(
 		[]internal.BackgroundConfiguration{
 			{
 				BackgroundJobFunc:         internal.Test1,
 				AppName:                   "api",
 				BackgroundJobName:         "UpdateFeatureFlags1",
 				BackgroundJobWaitDuration: 5 * time.Second,
-				LifeCheckDuration:         10 * time.Second,
+				LifeCheckDuration:         3 * time.Second,
+				//Locator:                   ml1,
 			},
 			{
 				BackgroundJobFunc:         internal.Test2,
 				AppName:                   "api",
 				BackgroundJobName:         "UpdateFeatureFlags2",
 				BackgroundJobWaitDuration: 5 * time.Second,
-				LifeCheckDuration:         10 * time.Second,
+				LifeCheckDuration:         3 * time.Second,
+				DependsOf: map[string]struct{}{
+					"api.UpdateFeatureFlags1": {},
+				},
+				Locator: ml2,
+			},
+			{
+				BackgroundJobFunc:         internal.Test3,
+				AppName:                   "non_api",
+				BackgroundJobName:         "UpdateFeatureFlags3",
+				BackgroundJobWaitDuration: 5 * time.Second,
+				LifeCheckDuration:         3 * time.Second,
+				DependsOf: map[string]struct{}{
+					"api.UpdateFeatureFlags1": {},
+					"api.UpdateFeatureFlags2": {},
+					//"e.UpdateFeatureFlags4":   {},
+				},
+				Locator: ml3,
 			},
 		},
 	)
 	if err != nil {
-		log.Println("there was an error in the schedule")
+		log.Println(err)
 		return
 	}
 
-	life.RunSchedule(ctx)
+	life.Run(ctx)
 
 	<-sigCh
 	cancel()
 
 	log.Println(fmt.Sprintf("Alive %v", life.Alive()))
-	life.AwaitStopSchedule()
+	life.Stop()
 	log.Println(fmt.Sprintf("Alive %v", life.Alive()))
 
 	logs := life.GetScheduleLogTime(time.DateTime)

@@ -15,14 +15,20 @@ type syncScheduler struct {
 	config  BackgroundConfiguration
 }
 
-type BackgroundJob func(ctx context.Context) error
+type ServiceLocator interface {
+	ServiceName() string
+}
+
+type BackgroundJob func(ctx context.Context, locator ServiceLocator) error
 
 type BackgroundConfiguration struct {
-	BackgroundJobFunc BackgroundJob
-	AppName,
-	BackgroundJobName string
-	BackgroundJobWaitDuration,
-	LifeCheckDuration time.Duration
+	BackgroundJobFunc         BackgroundJob
+	AppName                   string
+	BackgroundJobName         string
+	BackgroundJobWaitDuration time.Duration
+	LifeCheckDuration         time.Duration
+	Locator                   ServiceLocator
+	DependsOf                 map[string]struct{}
 }
 
 func newScheduler(config BackgroundConfiguration) *syncScheduler {
@@ -43,7 +49,7 @@ func (ss *syncScheduler) decrementAliveGo() {
 	atomic.AddInt64(&ss.aliveGo, -1)
 }
 
-func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *ScheduleLife) {
+func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *ScheduleLife, locator ServiceLocator) {
 	ctx, cancel := context.WithCancel(importCtx)
 	defer cancel()
 
@@ -67,30 +73,58 @@ func (ss *syncScheduler) runSchedule(importCtx context.Context, scheduleLife *Sc
 			if ss.getAliveGo() == 0 {
 				log.Println(runtime.NumGoroutine(), "in_check")
 
-				go ss.runJob(ctx, scheduleLife)
+				go ss.runJob(ctx, scheduleLife, locator)
 			}
 		}
 	}
 }
 
-func (ss *syncScheduler) runJob(ctx context.Context, scheduleLife *ScheduleLife) {
+func (ss *syncScheduler) runJob(ctx context.Context, scheduleLife *ScheduleLife, locator ServiceLocator) {
+	ss.incrementAliveGo()
+
 	defer func() {
 		ss.decrementAliveGo()
 	}()
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println(fmt.Sprintf("syncScheduler.runJob() %s %s was Recovered. Error: %s", ss.config.AppName, ss.config.BackgroundJobName, r))
+			log.Println(fmt.Sprintf("syncScheduler.runJob() %s %s Has Recovered. Error: %s", ss.config.AppName, ss.config.BackgroundJobName, r))
 		}
 	}()
 
+dependsLoop:
+	for {
+		if len(ss.config.DependsOf) == 0 {
+			break dependsLoop
+		}
+		select {
+		case <-ctx.Done():
+			log.Println("job context exit")
+			return
+		case <-time.After(100 * time.Millisecond):
+			doneExpectedGoroutines := 0
+			for k := range ss.config.DependsOf {
+				logHit := scheduleLife.getScheduleLogTime(k)
+				if logHit != nil {
+					if logHit.lastEndOfExecution != nil {
+						doneExpectedGoroutines++
+					}
+				}
+			}
+			if doneExpectedGoroutines == len(ss.config.DependsOf) {
+				log.Println("the dependent task has been unblocked", fmt.Sprintf("%s.%s", ss.config.AppName, ss.config.BackgroundJobName))
+				break dependsLoop
+			}
+		}
+	}
+
 	select {
-	//case <-time.After(1 * time.Second):
-	//	select {
+	case <-ctx.Done():
+		log.Println("job context exit")
+		return
 	case <-time.After(ss.config.BackgroundJobWaitDuration):
 		key := ss.config.AppName + "." + ss.config.BackgroundJobName
 		start := time.Now()
-		ss.incrementAliveGo()
-		err := ss.config.BackgroundJobFunc(ctx)
+		err := ss.config.BackgroundJobFunc(ctx, locator)
 		end := time.Now()
 		scheduleLife.setScheduleLogTime(start, end, key)
 		if err != nil {
